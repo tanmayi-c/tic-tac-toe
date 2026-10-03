@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Tic-Tac-Toe</title>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- COLORS: change these to restyle the whole game ---------- */
+  :root {
+    --bg: #f4f6f7;      /* whiteboard */
+    --ink: #1d2b36;     /* text and grid lines */
+    --x: #c0392b;       /* X color */
+    --o: #1f6fb2;       /* O color */
+    --win: #ffe27a;     /* winning-cell highlight */
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #20393b; --ink: #f2f0e6; --x: #f28f8f; --o: #8fd0f2; --win: #4c6a3c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #20393b; --ink: #f2f0e6; --x: #f28f8f; --o: #8fd0f2; --win: #4c6a3c;
+  }
+
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Caveat", "Segoe Print", "Bradley Hand", cursive;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; padding: 16px;
+  }
+
+  h1 { margin: 0; font-size: 2.6rem; }
+  #status { font-size: 1.8rem; min-height: 2.2rem; margin: 0; }
+  #scores { display: flex; gap: 28px; font-size: 1.5rem; }
+
+  /* ---------- THE BOARD: a 3x3 grid ---------- */
+  #board {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    width: min(88vw, 360px);
+    aspect-ratio: 1;
+  }
+  .cell {
+    background: transparent;
+    border: 0 solid var(--ink);
+    border-width: 0 3px 3px 0;       /* draws the grid lines */
+    font: inherit; font-size: clamp(3.5rem, 18vw, 6rem); font-weight: 700;
+    color: var(--ink);
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .cell:nth-child(3n)      { border-right-width: 0; }   /* no line on right edge */
+  .cell:nth-child(n+7)     { border-bottom-width: 0; }  /* no line on bottom edge */
+  .cell.X { color: var(--x); }
+  .cell.O { color: var(--o); }
+  .cell.win { background: var(--win); }
+  .cell:focus-visible { outline: 3px dashed var(--ink); outline-offset: -6px; }
+
+  /* ---------- PLAYER NAME INPUTS ---------- */
+  #names { display: flex; gap: 12px; }
+  #names input {
+    font: inherit; font-size: 1.4rem; color: var(--ink);
+    background: transparent; border: 0; border-bottom: 2px solid var(--ink);
+    width: min(38vw, 160px); text-align: center; padding: 2px 4px;
+  }
+  #names input::placeholder { color: var(--ink); opacity: .5; }
+  #names input:focus-visible { outline: 3px dashed var(--ink); outline-offset: 2px; }
+
+  button.action {
+    font: inherit; font-size: 1.5rem; color: var(--ink);
+    background: transparent; border: 2px solid var(--ink); border-radius: 10px;
+    padding: 4px 20px; cursor: pointer;
+  }
+  button.action:focus-visible { outline: 3px dashed var(--ink); outline-offset: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Tic-Tac-Toe</h1>
+<div id="names">
+  <input id="nameX" maxlength="12" placeholder="Player X" aria-label="Name for X">
+  <input id="nameO" maxlength="12" placeholder="Player O" aria-label="Name for O">
+</div>
+<p id="status" aria-live="polite"></p>
+<div id="board"></div>
+<div id="scores">
+  <span><span id="labelX">Player X</span>: <b id="scoreX">0</b></span>
+  <span>Draws: <b id="scoreD">0</b></span>
+  <span><span id="labelO">Player O</span>: <b id="scoreO">0</b></span>
+</div>
+<button class="action" id="restart">New round</button>
+
+<script>
+  // ---------- GAME STATE ----------
+  // The board is an array of 9 slots, numbered 0-8 left to right, top to bottom:
+  //   0 | 1 | 2
+  //   3 | 4 | 5
+  //   6 | 7 | 8
+  // Each slot holds "X", "O", or null (empty).
+  let board, current, gameOver;
+  const scores = { X: 0, O: 0, D: 0 };
+
+  // Every way to win: 3 rows, 3 columns, 2 diagonals.
+  const WINNING_LINES = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],   // rows
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],   // columns
+    [0, 4, 8], [2, 4, 6]               // diagonals
+  ];
+
+  const boardEl  = document.getElementById("board");
+  const statusEl = document.getElementById("status");
+
+  // Returns the typed name for "X" or "O", or "Player X" / "Player O" if left empty.
+  function name(mark) {
+    return document.getElementById("name" + mark).value.trim() || "Player " + mark;
+  }
+
+  // Keep the scoreboard labels in sync as names are typed.
+  ["X", "O"].forEach(mark => {
+    document.getElementById("name" + mark).addEventListener("input", () => {
+      document.getElementById("label" + mark).textContent = name(mark);
+    });
+  });
+
+  // ---------- SETUP ----------
+  // Build the 9 buttons once.
+  for (let i = 0; i < 9; i++) {
+    const cell = document.createElement("button");
+    cell.className = "cell";
+    cell.setAttribute("aria-label", "Cell " + (i + 1));
+    cell.addEventListener("click", () => handleMove(i));
+    boardEl.appendChild(cell);
+  }
+  document.getElementById("restart").addEventListener("click", newRound);
+
+  // Reset everything for a fresh round (scores are kept).
+  function newRound() {
+    board = Array(9).fill(null);
+    current = "X";
+    gameOver = false;
+    document.querySelectorAll(".cell").forEach(c => {
+      c.textContent = "";
+      c.className = "cell";
+    });
+    statusEl.textContent = name("X") + " goes first";
+  }
+
+  // ---------- GAME LOGIC ----------
+  // Runs when a player clicks cell number i.
+  function handleMove(i) {
+    if (gameOver || board[i]) return;      // ignore clicks on taken cells or after the game ends
+
+    board[i] = current;                    // 1. record the move
+    const cell = boardEl.children[i];
+    cell.textContent = current;            // 2. show it
+    cell.classList.add(current);
+
+    const line = findWinningLine();        // 3. did that move win?
+    if (line) {
+      endGame(name(current) + " wins!", current, line);
+    } else if (board.every(slot => slot)) {  // 4. no empty slots left = draw
+      endGame("It's a draw", "D", []);
+    } else {
+      current = current === "X" ? "O" : "X"; // 5. otherwise, switch turns
+      statusEl.textContent = name(current) + "'s turn";
+    }
+  }
+
+  // Check each winning line: are all three slots the same player (and not empty)?
+  // Returns the winning line, or null if nobody has won yet.
+  function findWinningLine() {
+    for (const [a, b, c] of WINNING_LINES) {
+      if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+        return [a, b, c];
+      }
+    }
+    return null;
+  }
+
+  function endGame(message, scoreKey, winningCells) {
+    gameOver = true;
+    statusEl.textContent = message;
+    scores[scoreKey]++;
+    document.getElementById("score" + scoreKey).textContent = scores[scoreKey];
+    winningCells.forEach(i => boardEl.children[i].classList.add("win"));
+  }
+
+  newRound();
+</script>
+</body>
+</html>

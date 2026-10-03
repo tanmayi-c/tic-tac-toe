@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="neon">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sheesh - a card game</title>
+<style>
+  /* ---------- THEMES: each one just swaps these variables ---------- */
+  [data-theme="neon"]   { --bg:#0d0b1f; --panel:#1b1740; --ink:#f4f1ff; --accent:#ff3ea5; --cardink:#0d0b1f;
+    --c0:#ff3b5c; --c1:#2ee6a6; --c2:#3d8bff; --c3:#ffd23f; --font:"Courier New",monospace; --r:6px; }
+  [data-theme="candy"]  { --bg:#fff1f6; --panel:#ffffff; --ink:#4a2545; --accent:#ff6fa5; --cardink:#4a2545;
+    --c0:#ff7a93; --c1:#6fd6a8; --c2:#7ab8ff; --c3:#ffc857; --font:"Trebuchet MS",sans-serif; --r:18px; }
+  [data-theme="forest"] { --bg:#14261c; --panel:#1f3a2b; --ink:#eaf3e2; --accent:#e8b04a; --cardink:#10200f;
+    --c0:#e0645f; --c1:#7cb86a; --c2:#5aa9c4; --c3:#e8b04a; --font:Georgia,serif; --r:10px; }
+  [data-theme="sunset"] { --bg:#2a1226; --panel:#44203a; --ink:#fff0e6; --accent:#ff9a56; --cardink:#2a1226;
+    --c0:#ff5e5b; --c1:#ffb347; --c2:#c77dff; --c3:#4dd0c8; --font:Verdana,sans-serif; --r:12px; }
+
+  :root { box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px); }
+  *, *::before, *::after { box-sizing:inherit; }
+  body { margin:0; min-height:100%; background:var(--bg); color:var(--ink); font-family:var(--font);
+    display:flex; justify-content:center; padding:14px; transition:background .3s; }
+  #app { width:100%; max-width:520px; }
+  .hidden { display:none !important; }
+  .screen { display:flex; flex-direction:column; align-items:center; gap:14px; text-align:center; }
+  h1 { font-size:3rem; margin:8px 0 0; letter-spacing:.08em; color:var(--accent); }
+  p { margin:0; }
+
+  input { font:inherit; font-size:1.1rem; color:var(--ink); background:var(--panel); border:2px solid var(--accent);
+    border-radius:var(--r); padding:10px 12px; width:100%; text-align:center; }
+  .btn { font:inherit; font-weight:700; font-size:1.05rem; background:var(--accent); color:var(--cardink);
+    border:0; border-radius:var(--r); padding:11px 22px; cursor:pointer; }
+  .btn.ghost { background:transparent; color:var(--ink); border:2px solid var(--accent); }
+  button:focus-visible, input:focus-visible { outline:3px dashed var(--ink); outline-offset:3px; }
+
+  .themes { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
+  .themes button { font:inherit; font-size:.85rem; color:var(--ink); background:var(--panel);
+    border:2px solid transparent; border-radius:var(--r); padding:6px 12px; cursor:pointer; }
+  .themes button[aria-pressed="true"] { border-color:var(--accent); }
+
+  /* ---------- CARDS ---------- */
+  .card { width:60px; height:88px; border-radius:var(--r); border:3px solid var(--ink); color:var(--cardink);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; font:inherit;
+    font-size:1.9rem; font-weight:700; line-height:1; padding:0; cursor:pointer; }
+  .card small { font-size:1rem; }
+  .card.big { width:76px; height:112px; font-size:2.6rem; cursor:default; }
+  .card.back { background:var(--panel); color:var(--accent); border-color:var(--accent); font-size:1.1rem; cursor:pointer; }
+  .card:disabled { opacity:.4; cursor:not-allowed; }
+  .c0 { background:var(--c0); } .c1 { background:var(--c1); } .c2 { background:var(--c2); } .c3 { background:var(--c3); }
+
+  #table { display:flex; gap:22px; align-items:center; justify-content:center; background:var(--panel);
+    border-radius:var(--r); padding:16px; width:100%; }
+  #hand { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  #msg { min-height:1.5rem; font-weight:700; }
+  #actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  #opp, #status { font-size:1.1rem; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- SCREEN 1: names + theme -->
+  <section id="setup" class="screen">
+    <h1>SHEESH</h1>
+    <p>Empty your hand first. Say "Sheesh" when you're down to one card!</p>
+    <input id="n1" maxlength="12" placeholder="Player 1 name" aria-label="Player 1 name">
+    <input id="n2" maxlength="12" placeholder="Player 2 name" aria-label="Player 2 name">
+    <p>Pick a theme</p>
+    <div class="themes"></div>
+    <button class="btn" id="start">Deal the cards</button>
+  </section>
+
+  <!-- SCREEN 2: hides the hand while the device is handed over -->
+  <section id="pass" class="screen hidden">
+    <h1 id="passTitle"></h1>
+    <p>Pass the device. No peeking!</p>
+    <button class="btn" id="ready">I'm ready</button>
+  </section>
+
+  <!-- SCREEN 3: the game -->
+  <section id="game" class="screen hidden">
+    <div class="themes"></div>
+    <p id="status"></p>
+    <p id="opp"></p>
+    <div id="table">
+      <button class="card back" id="drawPile" aria-label="Draw a card"></button>
+      <div id="discard" class="card big"></div>
+    </div>
+    <p id="msg" aria-live="polite"></p>
+    <div id="actions">
+      <button class="btn" id="sheesh">SHEESH!</button>
+      <button class="btn ghost" id="callout">Call out!</button>
+      <button class="btn" id="end">End turn</button>
+      <button class="btn ghost" id="quit">Quit</button>
+    </div>
+    <div id="hand"></div>
+  </section>
+
+  <!-- SCREEN 4: winner -->
+  <section id="win" class="screen hidden">
+    <h1 id="winTitle"></h1>
+    <button class="btn" id="again">Play again</button>
+    <button class="btn ghost" id="rename">Change names</button>
+  </section>
+
+</div>
+
+<script>
+  // ---------- BASIC DATA ----------
+  // A card is an object: { c: colorNumber (0-3), n: number (1-9) }
+  const SYMBOLS = ["●", "▲", "■", "★"];   // a symbol per color, so color isn't the only clue
+  const THEMES = [["neon", "Neon"], ["candy", "Candy"], ["forest", "Forest"], ["sunset", "Sunset"]];
+  const $ = id => document.getElementById(id);
+
+  let g;   // the whole game state lives in this one object (set in startGame)
+
+  // ---------- THEMES ----------
+  // Build the theme buttons in both places they appear.
+  document.querySelectorAll(".themes").forEach(box => {
+    THEMES.forEach(([key, label]) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.dataset.theme = key;
+      b.addEventListener("click", () => setTheme(key));
+      box.appendChild(b);
+    });
+  });
+  function setTheme(key) {
+    document.documentElement.dataset.theme = key;   // CSS does the rest
+    document.querySelectorAll(".themes button").forEach(b =>
+      b.setAttribute("aria-pressed", b.dataset.theme === key));
+  }
+  setTheme("neon");
+
+  // ---------- DECK HELPERS ----------
+  // 4 colors x numbers 1-9 x 2 copies = 72 cards.
+  function buildDeck() {
+    const deck = [];
+    for (let c = 0; c < 4; c++)
+      for (let n = 1; n <= 9; n++)
+        deck.push({ c, n }, { c, n });
+    return shuffle(deck);
+  }
+  // Fisher-Yates shuffle: swap each card with a random earlier one.
+  function shuffle(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  // Take a card from the deck. If it's empty, reshuffle the discard pile (except the top card).
+  function drawCard() {
+    if (g.deck.length === 0) {
+      const top = g.discard.pop();
+      g.deck = shuffle(g.discard);
+      g.discard = [top];
+    }
+    return g.deck.pop();
+  }
+  const topCard = () => g.discard[g.discard.length - 1];
+  // A card is playable if it matches the top card's color OR number.
+  const canPlay = card => card.c === topCard().c || card.n === topCard().n;
+
+  // ---------- SCREENS ----------
+  function show(id) {
+    ["setup", "pass", "game", "win"].forEach(s => $(s).classList.toggle("hidden", s !== id));
+  }
+
+  // ---------- STARTING A GAME ----------
+  $("start").addEventListener("click", () => {
+    const names = [$("n1").value.trim() || "Player 1", $("n2").value.trim() || "Player 2"];
+    startGame(names);
+  });
+  $("again").addEventListener("click", () => startGame(g.names));
+  $("rename").addEventListener("click", () => show("setup"));
+
+  function startGame(names) {
+    const deck = buildDeck();
+    g = {
+      names,
+      hands: [deck.splice(0, 7), deck.splice(0, 7)],  // deal 7 cards each
+      deck,
+      discard: [deck.pop()],     // flip the first card face up
+      turn: 0,                   // 0 = player 1, 1 = player 2
+      acted: false,              // has this player played or drawn yet?
+      pending: null,             // set when someone is down to 1 card: { idx, said }
+      msg: ""
+    };
+    showPass();
+  }
+
+  // ---------- TURN FLOW ----------
+  function showPass() {
+    $("passTitle").textContent = g.names[g.turn] + "'s turn";
+    show("pass");
+  }
+  $("ready").addEventListener("click", () => { show("game"); render(); });
+
+  $("end").addEventListener("click", () => {
+    g.turn = 1 - g.turn;
+    g.acted = false;
+    g.msg = "";
+    showPass();
+  });
+
+  // Quit: first tap asks "Sure?", second tap within 3 seconds quits.
+  // (This avoids confirm() pop-ups, which some browsers block.)
+  let quitTimer;
+  $("quit").addEventListener("click", () => {
+    if ($("quit").textContent === "Quit") {
+      $("quit").textContent = "Sure? Tap again";
+      quitTimer = setTimeout(() => { $("quit").textContent = "Quit"; }, 3000);
+    } else {
+      clearTimeout(quitTimer);
+      $("quit").textContent = "Quit";
+      show("setup");
+    }
+  });
+
+  // Once the current player acts, the other player's chance to call them out is gone.
+  function clearCallout() {
+    if (g.pending && g.pending.idx !== g.turn) g.pending = null;
+  }
+
+  // ---------- ACTIONS ----------
+  function playCard(i) {
+    const hand = g.hands[g.turn];
+    if (g.acted || !canPlay(hand[i])) return;
+
+    g.discard.push(hand.splice(i, 1)[0]);   // move card from hand to discard pile
+    g.acted = true;
+    clearCallout();
+
+    if (hand.length === 0) {                // empty hand = win!
+      $("winTitle").textContent = g.names[g.turn] + " wins!";
+      show("win");
+      return;
+    }
+    if (hand.length === 1) {                // one card left: must say SHEESH
+      g.pending = { idx: g.turn, said: false };
+      g.msg = "One card left! Press SHEESH!";
+    }
+    render();
+  }
+
+  $("drawPile").addEventListener("click", () => {
+    if (g.acted) return;
+    g.hands[g.turn].push(drawCard());
+    g.acted = true;
+    clearCallout();
+    g.msg = "You drew a card.";
+    render();
+  });
+
+  $("sheesh").addEventListener("click", () => {
+    if (g.pending && g.pending.idx === g.turn && !g.pending.said) {
+      g.pending.said = true;
+      g.msg = "SHEESH! You're safe.";
+    } else if (g.hands[g.turn].length === 1) {
+      g.msg = "You already said SHEESH!";
+    } else {
+      g.msg = "Too early! You have " + g.hands[g.turn].length + " cards.";
+    }
+    render();
+  });
+
+  // Call out the OTHER player. Penalty applies only if they have 1 card and never said SHEESH.
+  $("callout").addEventListener("click", () => {
+    const opp = 1 - g.turn;
+    if (g.pending && g.pending.idx === opp && !g.pending.said) {
+      g.hands[opp].push(drawCard(), drawCard());
+      g.pending = null;
+      g.msg = "Caught! " + g.names[opp] + " draws 2 cards.";
+    } else {
+      g.msg = g.names[opp] + " already said SHEESH. False alarm!";
+    }
+    render();
+  });
+
+  // ---------- DRAWING THE SCREEN ----------
+  function cardEl(card, tag) {
+    const el = document.createElement(tag);
+    el.className = "card c" + card.c;
+    el.innerHTML = "<small>" + SYMBOLS[card.c] + "</small>" + card.n;
+    el.setAttribute("aria-label", "Color " + SYMBOLS[card.c] + " number " + card.n);
+    return el;
+  }
+
+  function render() {
+    const me = g.turn, opp = 1 - me;
+    const hand = g.hands[me];
+
+    $("status").textContent = g.names[me] + ", your turn";
+    $("opp").textContent = g.names[opp] + " has " + g.hands[opp].length + " card" + (g.hands[opp].length === 1 ? "" : "s");
+    $("drawPile").textContent = "DRAW\n" + g.deck.length;
+    $("msg").textContent = g.msg;
+
+    // top card of the discard pile
+    const d = cardEl(topCard(), "div");
+    $("discard").className = d.className + " big";
+    $("discard").innerHTML = d.innerHTML;
+
+    // your hand: unplayable cards are dimmed
+    $("hand").innerHTML = "";
+    hand.forEach((card, i) => {
+      const b = cardEl(card, "button");
+      b.disabled = g.acted || !canPlay(card);
+      b.addEventListener("click", () => playCard(i));
+      $("hand").appendChild(b);
+    });
+
+    // which buttons to show
+    $("callout").classList.toggle("hidden", !(g.hands[opp].length === 1 && !g.acted));
+    $("end").classList.toggle("hidden", !g.acted);
+  }
+</script>
+</body>
+</html>
